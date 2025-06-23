@@ -39,6 +39,11 @@ resource "aws_organizations_organizational_unit" "sandbox" {
   parent_id = local.root_id
 }
 
+resource "aws_organizations_organizational_unit" "dumy" {
+  name      = "Dumy"
+  parent_id = local.root_id
+}
+
 # 2. Nested OUs under ProductLineDevelopment
 resource "aws_organizations_organizational_unit" "product_line_dev_children" {
   for_each  = toset(local.product_line_dev_ous)
