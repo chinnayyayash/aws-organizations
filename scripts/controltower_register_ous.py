@@ -12,7 +12,7 @@ BASELINE_VERSION = "4.0"
 def get_root_id():
     return org.list_roots()["Roots"][0]["Id"]
 
-# Step 2: Recursively fetch all OUs
+# Step 2: Recursively fetch all OUs, including parent and all child OUs
 def get_all_ous(parent_id, all_ous=None):
     if all_ous is None:
         all_ous = []
@@ -25,6 +25,7 @@ def get_all_ous(parent_id, all_ous=None):
                 "Id": ou["Id"],
                 "Arn": ou["Arn"]
             })
+            # 🔁 Recursively get nested child OUs
             get_all_ous(ou["Id"], all_ous)
     return all_ous
 
@@ -58,9 +59,35 @@ def get_enabled_identity_baseline_arn(identity_arn):
                 return b["arn"]
     return None
 
+# Step 5: Wait for any active operations to finish
+def wait_for_no_active_operations():
+    while True:
+        operations = ct.list_operations()["operations"]
+        active = [op for op in operations if op["status"] in ("IN_PROGRESS", "QUEUED")]
+        if not active:
+            return
+        print(f"⏳ Waiting for {len(active)} active operation(s) to complete...")
+        time.sleep(30)
+
+# Step 6: Wait for specific operation to complete
+def wait_for_operation(operation_id):
+    print(f"⏳ Waiting for operation {operation_id} to complete...")
+    while True:
+        response = ct.get_operation(operationIdentifier=operation_id)
+        status = response["operation"]['status']
+        if status == "SUCCEEDED":
+            print(f"✅ Operation {operation_id} completed successfully.")
+            break
+        elif status == "FAILED":
+            print(f"❌ Operation {operation_id} failed.")
+            break
+        else:
+            print(f"🕒 Operation status: {status}. Retrying in 30s...")
+            time.sleep(30)
+
 # Main logic
 def main():
-    print("🔍 Fetching all OUs...")
+    print("🔍 Fetching all OUs including parent and nested children...")
     root_id = get_root_id()
     all_ous = get_all_ous(root_id)
 
@@ -90,7 +117,10 @@ def main():
             print(f"✅ Already enabled: {ou_name} ({ou_id})")
             continue
 
-        # Step 4: Enable baseline
+        # Step 4: Wait for previous operations to finish
+        wait_for_no_active_operations()
+
+        # Step 5: Enable baseline
         print(f"🚀 Enabling baseline for OU: {ou_name} ({ou_id})")
         try:
             response = ct.enable_baseline(
@@ -105,7 +135,8 @@ def main():
                 ]
             )
             operation_id = response.get("operationIdentifier")
-            print(f"🟡 Enable operation started (ID: {operation_id}) — monitor in Control Tower console")
+            if operation_id:
+                wait_for_operation(operation_id)
 
         except ct.exceptions.ValidationException as ve:
             print(f"⚠️ Cannot enable baseline for OU '{ou_name}' — reason: {ve}")
