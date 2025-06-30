@@ -3,7 +3,7 @@ resource "null_resource" "register_ous" {
     command = "python3 ${path.module}/scripts/controltower_register_ous.py"
   }
 
-#   triggers = {
-#     always_run = timestamp()
-#   }
+  triggers = {
+    always_run = timestamp()
+  }
 }
