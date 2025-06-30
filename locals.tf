@@ -21,7 +21,7 @@ locals {
 
 # Under APAC → create Tier1, Tier2, Tier3
 locals {
-  apac_children = ["Tier1", "Tier2", "Tier3", "Tier4", "Tier5"]
+  apac_children = ["Tier1", "Tier2", "Tier3"]
 }
 
 # Under Tier1 → create NonProd, Prod
