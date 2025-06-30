@@ -10,8 +10,7 @@ locals {
     "Dev",
     "Test",
     "PreProd",
-    "Prod",
-    "chintha"
+    "Prod"
   ]
 }
 
