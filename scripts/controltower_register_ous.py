@@ -1,5 +1,6 @@
 import boto3
 import time
+import botocore.exceptions
 
 org = boto3.client("organizations")
 ct = boto3.client("controltower")
@@ -7,16 +8,16 @@ ct = boto3.client("controltower")
 CONTROL_BASELINE_NAME = "AWSControlTowerBaseline"
 IDENTITY_BASELINE_NAME = "IdentityCenterBaseline"
 BASELINE_VERSION = "4.0"
+WAIT_MINUTES = 10  # Wait time in minutes between enable operations
 
 # Step 1: Get Root OU ID
 def get_root_id():
     return org.list_roots()["Roots"][0]["Id"]
 
-# Step 2: Recursively fetch all OUs, including parent and all child OUs
+# Step 2: Recursively fetch all OUs, including nested child OUs
 def get_all_ous(parent_id, all_ous=None):
     if all_ous is None:
         all_ous = []
-
     paginator = org.get_paginator("list_organizational_units_for_parent")
     for page in paginator.paginate(ParentId=parent_id):
         for ou in page["OrganizationalUnits"]:
@@ -25,23 +26,34 @@ def get_all_ous(parent_id, all_ous=None):
                 "Id": ou["Id"],
                 "Arn": ou["Arn"]
             })
-            # 🔁 Recursively get nested child OUs
             get_all_ous(ou["Id"], all_ous)
     return all_ous
 
-# Step 3: Get list of already enabled OUs
+# Step 3: Get list of enabled OUs
 def get_enabled_ou_ids():
     enabled_ids = set()
-    paginator = ct.get_paginator("list_enabled_baselines")
-    for page in paginator.paginate():
-        for baseline in page["enabledBaselines"]:
-            arn = baseline["targetIdentifier"]
-            if arn.startswith("arn:aws:organizations"):
-                ou_id = arn.split("/")[-1].lower()
-                enabled_ids.add(ou_id)
-    return enabled_ids
+    retries = 0
+    while retries < 5:
+        try:
+            paginator = ct.get_paginator("list_enabled_baselines")
+            for page in paginator.paginate():
+                for baseline in page["enabledBaselines"]:
+                    arn = baseline["targetIdentifier"]
+                    if arn.startswith("arn:aws:organizations"):
+                        ou_id = arn.split("/")[-1].lower()
+                        enabled_ids.add(ou_id)
+            return enabled_ids
+        except botocore.exceptions.ClientError as e:
+            if e.response["Error"]["Code"] == "ThrottlingException":
+                wait_time = 2 ** retries
+                print(f"⏳ Throttled. Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+                retries += 1
+            else:
+                raise
+    raise Exception("Too many throttling errors while fetching enabled baselines")
 
-# Step 4: Get baseline ARNs
+# Step 4: Get ARNs for control and identity baselines
 def get_baseline_arns():
     control_arn = None
     identity_arn = None
@@ -59,31 +71,13 @@ def get_enabled_identity_baseline_arn(identity_arn):
                 return b["arn"]
     return None
 
-# Step 5: Wait for any active operations to finish
-def wait_for_no_active_operations():
-    while True:
-        operations = ct.list_operations()["operations"]
-        active = [op for op in operations if op["status"] in ("IN_PROGRESS", "QUEUED")]
-        if not active:
-            return
-        print(f"⏳ Waiting for {len(active)} active operation(s) to complete...")
-        time.sleep(30)
-
-# Step 6: Wait for specific operation to complete
-def wait_for_operation(operation_id):
-    print(f"⏳ Waiting for operation {operation_id} to complete...")
-    while True:
-        response = ct.get_operation(operationIdentifier=operation_id)
-        status = response["operation"]['status']
-        if status == "SUCCEEDED":
-            print(f"✅ Operation {operation_id} completed successfully.")
-            break
-        elif status == "FAILED":
-            print(f"❌ Operation {operation_id} failed.")
-            break
-        else:
-            print(f"🕒 Operation status: {status}. Retrying in 30s...")
-            time.sleep(30)
+# Step 5: Simulated wait for one operation to complete
+def wait_for_operation_simulated(operation_id):
+    print(f"⏳ Waiting {WAIT_MINUTES} minutes for operation {operation_id} to complete...")
+    for i in range(WAIT_MINUTES):
+        print(f"   → Minute {i + 1}/{WAIT_MINUTES}...")
+        time.sleep(60)
+    print(f"✅ Done waiting for {operation_id}. Proceeding to next OU.")
 
 # Main logic
 def main():
@@ -91,7 +85,6 @@ def main():
     root_id = get_root_id()
     all_ous = get_all_ous(root_id)
 
-    enabled_ou_ids = get_enabled_ou_ids()
     control_arn, identity_arn = get_baseline_arns()
     identity_enabled_arn = get_enabled_identity_baseline_arn(identity_arn)
 
@@ -99,28 +92,22 @@ def main():
         print("❌ Could not find required baseline ARNs. Exiting.")
         return
 
-    # 🔐 Define OU names to skip (case-insensitive)
     SKIP_OU_NAMES = {"security", "exceptions", "suspended"}
+    enabled_ou_ids = get_enabled_ou_ids()
 
     for ou in all_ous:
-        ou_name = ou["Name"]
+        ou_name = ou["Name"].strip().lower()
         ou_id = ou["Id"].lower()
         ou_arn = ou["Arn"]
 
-        # Step 2: Skip specific OU names (case-insensitive match)
-        if ou_name.strip().lower() in SKIP_OU_NAMES:
+        if ou_name in SKIP_OU_NAMES:
             print(f"🚫 Skipping OU by name: {ou_name} ({ou_id})")
             continue
 
-        # Step 3: Skip already-enabled OUs
         if ou_id in enabled_ou_ids:
             print(f"✅ Already enabled: {ou_name} ({ou_id})")
             continue
 
-        # Step 4: Wait for previous operations to finish
-        wait_for_no_active_operations()
-
-        # Step 5: Enable baseline
         print(f"🚀 Enabling baseline for OU: {ou_name} ({ou_id})")
         try:
             response = ct.enable_baseline(
@@ -136,7 +123,7 @@ def main():
             )
             operation_id = response.get("operationIdentifier")
             if operation_id:
-                wait_for_operation(operation_id)
+                wait_for_operation_simulated(operation_id)
 
         except ct.exceptions.ValidationException as ve:
             print(f"⚠️ Cannot enable baseline for OU '{ou_name}' — reason: {ve}")
