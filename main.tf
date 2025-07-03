@@ -4,6 +4,11 @@ resource "aws_organizations_organizational_unit" "product_line_development" {
   parent_id = local.root_id
 }
 
+resource "aws_organizations_organizational_unit" "aft_management" {
+  name      = "AFTManagement"
+  parent_id = local.root_id
+}
+
 resource "aws_organizations_organizational_unit" "product_line_tenants" {
   name      = "ProductLineTenants"
   parent_id = local.root_id
