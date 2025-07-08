@@ -1,6 +1,6 @@
 # 1. Create top-level OUs through Organizations
-resource "aws_organizations_organizational_unit" "product_line_development" {
-  name      = "ProductLineDevelopment"
+resource "aws_organizations_organizational_unit" "product_life_development" {
+  name      = "ProductLifeDevelopment"
   parent_id = local.root_id
   lifecycle {
     prevent_destroy = true
@@ -15,8 +15,8 @@ resource "aws_organizations_organizational_unit" "aft_management" {
   }
 }
 
-resource "aws_organizations_organizational_unit" "product_line_tenants" {
-  name      = "ProductLineTenants"
+resource "aws_organizations_organizational_unit" "product_life_tenants" {
+  name      = "ProductLifeTenants"
   parent_id = local.root_id
   lifecycle {
     prevent_destroy = true
@@ -71,11 +71,11 @@ resource "aws_organizations_organizational_unit" "sandbox" {
   }
 }
 
-# 2. Nested OUs under ProductLineDevelopment
-resource "aws_organizations_organizational_unit" "product_line_dev_children" {
-  for_each  = toset(local.product_line_dev_ous)
+# 2. Nested OUs under ProductLifeDevelopment
+resource "aws_organizations_organizational_unit" "product_life_dev_children" {
+  for_each  = toset(local.product_life_dev_ous)
   name      = each.value
-  parent_id = aws_organizations_organizational_unit.product_line_development.id
+  parent_id = aws_organizations_organizational_unit.product_life_development.id
   lifecycle {
     prevent_destroy = true
   }
@@ -85,15 +85,15 @@ resource "aws_organizations_organizational_unit" "product_line_dev_children" {
 resource "aws_organizations_organizational_unit" "direct_ous" {
   for_each  = toset(local.direct_children)
   name      = each.value
-  parent_id = aws_organizations_organizational_unit.product_line_tenants.id
+  parent_id = aws_organizations_organizational_unit.product_life_tenants.id
   lifecycle {
     prevent_destroy = true
   }
 }
 
 resource "aws_organizations_organizational_unit" "apac_ous" {
-  for_each  = toset(local.apac_children)
-  name      = each.value
+  for_each = toset(local.apac_children)
+  name     = each.value
   lifecycle {
     prevent_destroy = true
   }

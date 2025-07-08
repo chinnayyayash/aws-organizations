@@ -5,7 +5,7 @@ locals {
 
 # Define the list of OU names
 locals {
-  product_line_dev_ous = [
+  product_life_dev_ous = [
     "Sandbox",
     "Dev",
     "Test",
