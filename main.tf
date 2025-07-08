@@ -63,13 +63,6 @@ resource "aws_organizations_organizational_unit" "policy_staging" {
   }
 }
 
-resource "aws_organizations_organizational_unit" "sandbox" {
-  name      = "Sandbox"
-  parent_id = local.root_id
-  lifecycle {
-    prevent_destroy = true
-  }
-}
 
 # 2. Nested OUs under ProductLifeDevelopment
 resource "aws_organizations_organizational_unit" "product_life_dev_children" {
